@@ -35,4 +35,7 @@ ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache
 
 WORKDIR /root
 COPY . .
+
+EXPOSE 80
+
 CMD ["python", "run.py"]
