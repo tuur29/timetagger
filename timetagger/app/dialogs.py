@@ -708,6 +708,9 @@ class StartStopEdit:
         self.time2less.onclick = lambda: self.onchanged("time2less")
         self.time1input.oninput = lambda: self.onchanged("time1fast")
         self.time2input.oninput = lambda: self.onchanged("time2fast")
+        self.time1input.onkeydown = self._on_key1
+        self.time2input.onkeydown = self._on_key2
+        self.durationinput.onkeydown = self._on_key2
 
         self.reset(t1, t2, True)
         self._timer_handle = window.setInterval(lambda: self._update_duration(), 200)
@@ -865,6 +868,20 @@ class StartStopEdit:
             self.date2input.style.color = "#888"
         else:
             self.date2input.style.color = None
+
+    def _on_key1(self, e):
+        key = e.key.lower()
+        if key == "arrowdown":
+            self.onchanged("time1less")
+        elif key == "arrowup":
+            self.onchanged("time1more")
+
+    def _on_key2(self, e):
+        key = e.key.lower()
+        if key == "arrowdown":
+            self.onchanged("time2less")
+        elif key == "arrowup":
+            self.onchanged("time2more")
 
     def onchanged(self, action):
         now = dt.now()
