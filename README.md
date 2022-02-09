@@ -44,6 +44,7 @@ project and open source in general.
 ### Docker
 
 Run: `docker run -v data:/root/_timetagger:rw tuur29/timetagger`
+
 Build new version: `docker build -t tuur29/timetagger .`
 
 ## Installation
