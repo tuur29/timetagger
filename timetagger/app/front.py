@@ -1218,7 +1218,7 @@ class TopWidget(Widget):
                 None,
                 h,
                 ["fas-\uf04b", "Record"],
-                "record_start",
+                "record_new",
                 start_tt,
                 {"ref": "topright", "font": FONT.condensed},
             )
@@ -1362,7 +1362,7 @@ class TopWidget(Widget):
             if e.shiftKey:
                 self._handle_button_press("record_resume")
             else:
-                self._handle_button_press("record_start")
+                self._handle_button_press("record_new")
         elif e.key.lower() == "x":
             self._handle_button_press("record_stopall")
         elif e.key.lower() == "r":
