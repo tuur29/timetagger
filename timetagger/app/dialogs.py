@@ -928,9 +928,9 @@ class StartStopEdit:
             else:
                 hh, mm, ss = self._get_time("time1")
                 if option == "more":
-                    mm, ss = mm + 5, 0
+                    mm, ss = mm + 15, 0
                 elif option == "less":
-                    mm, ss = mm - 5, 0
+                    mm, ss = mm - 15, 0
                 d1 = window.Date(year1, month1 - 1, day1, hh, mm, ss)
                 self.t1 = dt.to_time_int(d1)
                 if self.ori_t1 == self.ori_t2:
@@ -948,9 +948,9 @@ class StartStopEdit:
             else:
                 hh, mm, ss = self._get_time("time2")
                 if option == "more":
-                    mm, ss = mm + 5, 0
+                    mm, ss = mm + 15, 0
                 elif option == "less":
-                    mm, ss = mm - 5, 0
+                    mm, ss = mm - 15, 0
                 d2 = window.Date(year2, month2 - 1, day2, hh, mm, ss)
                 self.t2 = dt.to_time_int(d2)
                 if self.ori_t1 == self.ori_t2:

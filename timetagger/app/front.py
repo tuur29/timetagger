@@ -2621,7 +2621,7 @@ class RecordsWidget(Widget):
         tround = 1
         secspernpixels = 10 * nsecs / npixels
         if secspernpixels > 100:
-            tround = 300  # 5 min
+            tround = 900  # 15 min
         elif secspernpixels > 60:
             tround = 60  # 1 min
 
