@@ -43,7 +43,8 @@ project and open source in general.
 
 ### Docker
 
-`docker run -v data:/root/_timetagger:rw mortbauer/timetagger`
+Run: `docker run -v data:/root/_timetagger:rw tuur29/timetagger`
+Build new version: `docker build -t tuur29/timetagger .`
 
 ## Installation
 
