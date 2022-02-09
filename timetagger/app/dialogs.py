@@ -623,7 +623,7 @@ class StartStopEdit:
         <span><i class='fas' style='color:#999; vertical-align:middle;'>\uf144</i></span>
             <input type='date' step='1'  style='font-size: 80%;' />
             <span style='display: flex;'>
-                <input type='text' style='flex:1; min-width: 50px; font-size: 80%;' />
+                <input type='text' style='flex:1; min-width: 50px; font-size: 80%;' tabindex='2' />
                 <button type='button' style='width:2em; margin-left:-1px;'>+</button>
                 <button type='button' style='width:2em; margin-left:-1px;'>-</button>
                 </span>
@@ -631,14 +631,14 @@ class StartStopEdit:
         <span><i class='fas' style='color:#999; vertical-align:middle;'>\uf28d</i></span>
             <input type='date' step='1' style='font-size: 80%;' />
             <span style='display: flex;'>
-                <input type='text' style='flex:1; min-width: 50px; font-size: 80%;' />
+                <input type='text' style='flex:1; min-width: 50px; font-size: 80%;' tabindex='3' />
                 <button type='button' style='width:2em; margin-left:-1px;'>+</button>
                 <button type='button' style='width:2em; margin-left:-1px;'>-</button>
                 </span>
             <span></span>
         <span><i class='fas' style='color:#999; vertical-align:middle;'>\uf2f2</i></span>
             <span></span>
-            <input type='text' style='flex: 1; min-width: 50px' />
+            <input type='text' style='flex: 1; min-width: 50px' tabindex='4' />
             <span></span>
         </div>
         """
@@ -1013,7 +1013,7 @@ class RecordDialog(BaseDialog):
             </h1>
             <h2><i class='fas'>\uf305</i>&nbsp;&nbsp;Description</h2>
             <div class='container' style='position: relative;'>
-                <input type='text' style='width:100%;' spellcheck='false' />
+                <input type='text' style='width:100%;' spellcheck='false' tabindex='1' />
                 <div class='tag-suggestions-autocomp'></div>
             </div>
             <div class='container' style='min-height:5px;'>
