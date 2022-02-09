@@ -159,7 +159,7 @@ def convert_text_to_valid_tag(s):
     return tag_name
 
 
-def get_tags_and_parts_from_string(s=""):
+def get_tags_and_parts_from_string(s="", sorted=True):
     """Given a string, return a sorted list of tags, and a list of text parts
     that can be concatenated into the (nearly) original string.
 
@@ -211,7 +211,8 @@ def get_tags_and_parts_from_string(s=""):
     tags = tags.values()
     if not this_is_js():
         tags = list(tags)
-    tags.sort()
+    if sorted:
+        tags.sort()
     return tags, parts
 
 
@@ -345,6 +346,74 @@ def order_stats_by_duration_and_name(items):
 
     # Sort - note the JS API, not Py
     items.sort(sortfunc)
+
+
+def timestr2tuple(text):
+    PSCRIPT_OVERLOAD = False  # noqa
+    # Cases to support:
+    # hh:mm:ss
+    # hh mm ss
+    # hh mm
+    # xxh xxm xxs
+    # hhmmss
+    # hhmm
+
+    # Determine format
+    text = text.strip().lower()
+    format = "24h"
+    if len(text) >= 3 and text[-1] == "m":
+        if text[-2] == "p":
+            format = "pm"
+            text = text[:-2].rstrip()
+        elif text[-2] == "a":
+            format = "am"
+            text = text[:-2].rstrip()
+
+    values = {"h": "0", "m": "0", "s": "0", "_": ""}
+    nextmap = {"h": "m", "m": "s", "s": "_", "_": "_"}
+
+    pending = ""
+    next_natural_target = "h"
+    parse_count = 0
+    for c in text + " ":
+        if c in " :;,hms":
+            if pending:
+                target = c if c in "hms" else next_natural_target
+                next_natural_target = nextmap[target]
+                values[target] = pending
+                parse_count += 1
+            pending = ""
+        elif c in "0123456789":
+            if pending is not None:
+                pending += c
+        else:
+            pending = None
+
+    if parse_count == 0:
+        return None, None, None
+
+    # Turn 1345 into 13:45
+    if parse_count == 1 and not text[-1] in ":;,hms":
+        if len(values["h"]) > 2:
+            values["m"] = values["h"][2:]
+            values["h"] = values["h"][:2]
+        if len(values["m"]) > 2:
+            values["s"] = values["m"][2:4]
+            values["m"] = values["m"][:2]
+
+    # Get numbers
+    h, m, s = int(values["h"]), int(values["m"]), int(values["s"])
+
+    # Handle am and pm notation
+    if format == "am" and h == 12:
+        h = 0
+    elif format == "pm" and h < 12:
+        h += 12
+
+    # We could protect user from accidentally typing 100 hours or so.
+    # But being able to write 62m and durations of 24h+ also matter. See #129.
+    # return min(h, 23), min(m, 59), min(s, 59)
+    return h, m, s
 
 
 def positions_mean_and_std(positions):
@@ -664,15 +733,12 @@ class BaseCanvas:
     def _on_js_touch_event(self, e):
         e.preventDefault()
         ev = create_pointer_event(self.node, e)
-        ev.type = (
-            "touch_"
-            + {
-                "start": "down",
-                "move": "move",
-                "end": "up",
-                "cancel": "up",
-            }.get(e.type[5:])
-        )
+        ev.type = "touch_" + {
+            "start": "down",
+            "move": "move",
+            "end": "up",
+            "cancel": "up",
+        }.get(e.type[5:])
         self.on_pointer(ev)
 
     def _on_js_resize_event(self):

@@ -244,15 +244,16 @@ class TimeTaggerCanvas(BaseCanvas):
         # ctx.fillRect(0, 0, self.w, self.h)
 
         # Draw icon in bottom right
-        iconw = 192 if self.w >= 400 else 96
-        iconh = iconw / 6
-        ctx.drawImage(
-            window.document.getElementById("ttlogo_tg"),
-            self.w - iconw - 5,
-            self.h - iconh - 5,
-            iconw,
-            iconh,
-        )
+        if self.w >= 800:
+            iconw = 192 if self.w >= 400 else 96
+            iconh = iconw / 6
+            ctx.drawImage(
+                window.document.getElementById("ttlogo_tg"),
+                self.w - iconw - 5,
+                self.h - iconh - 5,
+                iconw,
+                iconh,
+            )
 
         # Determine if we are logged in and all is right (e.g. token not expired)
         cantuse = None
@@ -440,8 +441,8 @@ class TimeRange:
             nsecs_old = t2_old - t1_old
             nsecs_new = t2_new - t1_new
             x = Math.log(2 + nsecs_old) / Math.log(2 + nsecs_new)
-            x = x ** 2  # Otherwise higher scaler animate slower
-            f = f ** x
+            x = x**2  # Otherwise higher scaler animate slower
+            f = f**x
             # Linear animation, or slower towards the end?
             # f = f ** 2
             self._t1 = f * t1_old + (1 - f) * t1_new
@@ -748,13 +749,16 @@ class Widget:
         # Measure texts
         widths = []
         fonts = []
+        fontsize = int(0.5 * h)
+        if given_w:
+            fontsize = min(fontsize, int(0.6 * given_w))
         for i in range(len(texts)):
             text = texts[i]
             if text.startswith("fas-"):
                 text = text[4:]
-                font = int(0.5 * h) + "px FontAwesome"
+                font = fontsize + "px FontAwesome"
             else:
-                font = int(0.5 * h) + "px " + opt.font
+                font = fontsize + "px " + opt.font
             ctx.font = font
             width = ctx.measureText(text).width
             texts[i] = text
@@ -924,41 +928,69 @@ class TopWidget(Widget):
         # Draw some more inside dark banner
         self._draw_header_text(ctx, 60, y1, x2 - 60, y2 - 5)
 
+        now_scale, now_clr = self._get_now_scale()
+        if now_scale != "1D":
+            now_clr = COLORS.button_text
+
         # Draw buttons below the dark banner
         # We go from the center to the sides
         xc = 0.5 * (x1 + x2)
 
+        # Move a bit to the right on smaller screens
+        avail_width = x2 - x1
+        xc += max(0, 600 - avail_width) * 0.18
+
         # Draw arrows
-        ha = 0.6 * h
+        ha = 0.7 * h
         yc = y3 + h / 2
-        dx = self._draw_button(
-            ctx,
-            xc,
-            yc - 1.5,
-            h,
-            ha,
-            "fas-\uf077",
-            "nav_backward",
-            "Step backward [↑/pageUp]",
-            {"ref": "bottomcenter"},
-        )
-        dx = self._draw_button(
-            ctx,
-            xc,
-            yc + 1.5,
-            h,
-            ha,
-            "fas-\uf078",
-            "nav_forward",
-            "Step forward [↓/pageDown]",
-            {"ref": "topcenter"},
-        )
+        updown_w = 0
+        if avail_width > 330:
+            updown_w = self._draw_button(
+                ctx,
+                xc,
+                yc - 1.5,
+                h,
+                ha,
+                "fas-\uf077",
+                "nav_backward",
+                "Step backward [↑/pageUp]",
+                {"ref": "bottomcenter"},
+            )
+            updown_w = self._draw_button(
+                ctx,
+                xc,
+                yc + 1.5,
+                h,
+                ha,
+                "fas-\uf078",
+                "nav_forward",
+                "Step forward [↓/pageDown]",
+                {"ref": "topcenter"},
+            )
 
         # -- move to the left
 
-        x = xc - dx / 2 - 3
+        x = xc - updown_w / 2 - 3
 
-        now_scale, now_clr = self._get_now_scale()
+        zoom_w = 0
+        if avail_width > 400:
+            zoom_w = self._draw_button(
+                ctx,
+                x,
+                y3,
+                ha,
+                h,
+                "fas-\uf010",
+                "nav_zoom_" + self._current_scale["out"],
+                "Zoom out [←]",
+                {"ref": "ropright"},
+            )
+            x -= zoom_w + 5
+
+        nav_width = ha
+        x -= nav_width + 3 + 5  # tiny extra margin between nav button groups
+
+        today_w = 0
         today_w = self._draw_button(
             ctx,
             x,
@@ -966,9 +998,21 @@ class TopWidget(Widget):
             None,
             h,
             "Today",
-            "nav_snap_now" + now_scale,
-            "Snap to now [Home]",
+            "nav_snap_now1D",  # "nav_snap_now" + now_scale,
+            "Snap to now [d]",  # "Snap to now [Home]",
             {"ref": "topright", "color": now_clr, "font": FONT.condensed},
+        )
+
+        self._draw_button(
+            ctx,
+            x + nav_width + 3,
+            y3,
+            nav_width,
+            h,
+            "fas-\uf0d7",  # ["fas-\uf073", "fas-\uf0d7"],
+            "nav_menu",
+            "Select time range [t]",
+            {"ref": "topright"},
         )
 
         x -= today_w + margin
@@ -977,21 +1021,21 @@ class TopWidget(Widget):
 
         # -- move to the right
 
-        x = xc + dx / 2 + 3
+        x = xc + updown_w / 2 + 3
 
-        x += self._draw_button(
-            ctx,
-            x,
-            y3,
-            today_w,
-            h,
-            ["fas-\uf073", "fas-\uf0d7"],
-            "nav_menu",
-            "Select time range [t]",
-            {"ref": "topleft"},
-        )
-
-        x += margin
+        if avail_width > 400:
+            zoom_w = self._draw_button(
+                ctx,
+                x,
+                y3,
+                ha,
+                h,
+                "fas-\uf00e",
+                "nav_zoom_" + self._current_scale["in"],
+                "Zoom in [→]",
+                {"ref": "ropleft"},
+            )
+        x += zoom_w + margin
 
         x += self._draw_button(
             ctx,
@@ -1205,7 +1249,7 @@ class TopWidget(Widget):
 
         return x0 - x
 
-    def _get_now_scale(self, ctx):
+    def _get_now_scale(self):
 
         t1, t2 = self._canvas.range.get_range()  # get_snap_range()
         nsecs = t2 - t1
@@ -1223,9 +1267,7 @@ class TopWidget(Widget):
 
         # Overload for "sensible" scales
         now_scale = SCALES[i][0]
-        if nsecs < 3 * 86400:
-            now_scale = "1D"
-        elif nsecs > 180 * 86400:
+        if nsecs > 180 * 86400:
             now_scale = "1Y"
 
         # Are we currently on one of the reference scales?
@@ -1304,7 +1346,7 @@ class TopWidget(Widget):
             self._handle_button_press("nav_zoom_" + self._current_scale["out"])
         elif e.key.lower() == "arrowright":
             self._handle_button_press("nav_zoom_" + self._current_scale["in"])
-        elif e.key.lower() == "home" or e.key.lower() == "end":
+        elif e.key.lower() == "n" or e.key.lower() == "home" or e.key.lower() == "end":
             self._handle_button_press("nav_snap_now" + self._current_scale["now"])
         #
         elif e.key.lower() == "d":
@@ -1317,7 +1359,10 @@ class TopWidget(Widget):
             self._handle_button_press("nav_menu")
         #
         elif e.key.lower() == "s":
-            self._handle_button_press("record_start")
+            if e.shiftKey:
+                self._handle_button_press("record_resume")
+            else:
+                self._handle_button_press("record_start")
         elif e.key.lower() == "x":
             self._handle_button_press("record_stopall")
         elif e.key.lower() == "r":
@@ -1354,6 +1399,18 @@ class TopWidget(Widget):
             elif action == "record_new":
                 record = window.store.records.create(now - 1800, now)
                 self._canvas.record_dialog.open("New", record, self.update)
+            elif action == "record_resume":
+                record = window.store.records.create(now, now)
+                records = window.store.records.get_running_records()
+                if not records:
+                    records = window.store.records.get_records(
+                        now - 7 * 86400, now
+                    ).values()
+                    records.sort(key=lambda r: r.t2)
+                if records:
+                    prev_record = records[-1]
+                    record.ds = prev_record.ds
+                self._canvas.record_dialog.open("Start", record, self.update)
             elif action == "record_stop":
                 records = window.store.records.get_running_records()
                 if len(records) > 0:
@@ -1437,6 +1494,7 @@ class RecordsWidget(Widget):
 
         # Stuff related to interaction
         self._interaction_mode = 0
+        self._dragging_new_record = None  # None or [t1, t2]
         self._last_pointer_down_event = None
 
         self._arrow_state = 0, 0  # last_timestamp, last_alpha
@@ -1480,8 +1538,12 @@ class RecordsWidget(Widget):
         x4 = self._canvas.grid_round(x3 + 50)
 
         # Draw background of "active region"
-        ctx.fillStyle = COLORS.panel_bg
+        if self._dragging_new_record:
+            ctx.fillStyle = COLORS.acc_clr
+        else:
+            ctx.fillStyle = COLORS.panel_bg
         ctx.fillRect(x3, y1, x4 - x3, y2 - y1)
+        self._timeline_bounds = x3, x4, y1, y2
 
         # Draw animated arrow indicator
         self._draw_arrow(ctx, x1, y1, x2, y2, x3, x4)
@@ -1494,6 +1556,14 @@ class RecordsWidget(Widget):
         ctx.clearRect(0, 0, x2, y1 - 33)
         self._draw_top_and_bottom_cover(ctx, x1, x3, x4, x2, y1 - 50, y1, 0.333)
         self._draw_top_and_bottom_cover(ctx, x1, x3, x4, x2, y2, self._canvas.h, -0.02)
+
+        # Draw drag-text
+        if self._dragging_new_record:
+            ctx.textAlign = "left"
+            ctx.textBaseline = "bottom"
+            ctx.font = 1.2 * FONT.size + "px " + FONT.default
+            ctx.fillStyle = COLORS.prim2_clr
+            ctx.fillText("⬋ drag to create new record", x4, y1 - 2)
 
         # Draw title text
         if self._canvas.w > 700:
@@ -1725,6 +1795,23 @@ class RecordsWidget(Widget):
             ctx.strokeStyle = COLORS.prim1_clr
             ctx.stroke()
 
+        # Draw drag-new-record feedback
+        if self._dragging_new_record:
+            if self._dragging_new_record[0] > 0:
+                dt1, dt2 = self._dragging_new_record
+                dt1, dt2 = min(dt1, dt2), max(dt1, dt2)
+                dy1 = y1 + (dt1 - t1) * pps
+                dy2 = y1 + (dt2 - t1) * pps
+                ctx.fillStyle = "rgba(127, 127, 127, 0.5)"
+                rn = RECORD_ROUNDNESS
+                ctx.beginPath()
+                ctx.arc(x2 - rn, dy1 + rn, rn, 1.5 * PI, 2.0 * PI)
+                ctx.arc(x2 - rn, dy2 - rn, rn, 0.0 * PI, 0.5 * PI)
+                ctx.arc(x1 + rn, dy2 - rn, rn, 0.5 * PI, 1.0 * PI)
+                ctx.arc(x1 + rn, dy1 + rn, rn, 1.0 * PI, 1.5 * PI)
+                ctx.closePath()
+                ctx.fill()
+
         # Draw "now" - also if drawing stats
         t = self._canvas.now()
         y = y1 + (t - t1) * pps
@@ -1924,6 +2011,8 @@ class RecordsWidget(Widget):
         if len(selected_tags):
             if not all([tag in tags for tag in selected_tags]):
                 tags_selected = False
+        if self._dragging_new_record:
+            tags_selected = False
 
         # # Determine wheter this record is selected in the timeline
         # selected_in_timeline = False
@@ -2383,6 +2472,9 @@ class RecordsWidget(Widget):
             self._pointer_startpos[key] = pos
 
     def on_pointer_outside(self, ev):
+        if self._dragging_new_record is not None:
+            self._dragging_new_record = None
+            self.update()
         if self._selected_record is not None:
             self._selected_record = None
             self.update()
@@ -2402,6 +2494,13 @@ class RecordsWidget(Widget):
 
         x, y = ev.pos[0], ev.pos[1]
 
+        on_timeline = (
+            x > self._timeline_bounds[0]
+            and x < self._timeline_bounds[1]
+            and y > self._timeline_bounds[2]
+            and y < self._timeline_bounds[3]
+        )
+
         # Get range in time and pixels
         t1, t2 = self._canvas.range.get_range()
         _, y1, _, y2 = self.rect
@@ -2410,6 +2509,35 @@ class RecordsWidget(Widget):
 
         # Get current pos
         t = t1 + (y - y1) * nsecs / npixels
+
+        # Handle new record creation via dragging.
+        # This mode takes over all other behavior.
+        if self._dragging_new_record:
+            if "down" in ev.type:
+                self._last_pointer_down_event = ev
+                if on_timeline:
+                    self._dragging_new_record = [t, t]
+                    self.update()
+                    return
+                else:
+                    self._dragging_new_record = None
+                    pass  # Don't return, this can be the start of a normal drag
+            elif "move" in ev.type:
+                if self._dragging_new_record[0] > 0:
+                    self._dragging_new_record[1] = t
+                    self.update()
+                return
+            elif "up" in ev.type:
+                if self._dragging_new_record[0] > 0:
+                    dt1, dt2 = self._dragging_new_record
+                    dt1, dt2 = min(dt1, dt2), max(dt1, dt2)
+                    self._dragging_new_record = [0, 0]
+                    if abs(y - self._last_pointer_down_event.pos[1]) > 4:
+                        record = window.store.records.create(dt1, dt2)
+                        self._canvas.record_dialog.open("New", record, self.update)
+                        self._dragging_new_record = None
+                self.update()
+                return
 
         # Determine when to transition from one mode to another
         last_interaction_mode = self._interaction_mode
@@ -2444,7 +2572,13 @@ class RecordsWidget(Widget):
         # Things that only trigger if we did not move the mouse too much
         if last_interaction_mode == 1 and "up" in ev.type:
             picked = self._picker.pick(x, y)
-            if picked is not None:
+            if picked is None:
+                # Initiate create-via-drag?
+                if on_timeline:
+                    self._dragging_new_record = [0, 0]  # 0 means wait for press
+                    self.update()
+                    return
+            else:
                 if picked.statrect:
                     # A stat rectangle
                     self._canvas.range.animate_range(picked.t1, picked.t2)
@@ -2916,17 +3050,9 @@ class AnalyticsWidget(Widget):
         self._level_counts = []  # list of [selected_bars, unselected_bars]
         self._resolve_t(root, 0)
 
-        # Determine root inset, based on total time. But asymptotically limit it.
-        # This is based on the "softlimit" function.
-        one_pixel_in_secs = 30 * 60
-        npixels = root.cum_t / one_pixel_in_secs
-        avail_inset = 80
-        root_target_inset = -avail_inset * (Math.exp(-npixels / avail_inset) - 1)
-        root_target_inset *= min(80, ((x2 - x1) / 6)) / 80  # responsive
-        npixels_each_min_max = 40, 60
-
         # Determine max level and derive more props
-        avail_height = (y2 - y1) - (avail_inset / 4) * 2
+        npixels_each_min_max = 40, 60
+        avail_height = (y2 - y1) - 4
         n_max = avail_height / npixels_each_min_max[0]
         n = 0
         for level in range(len(self._level_counts)):
@@ -2938,6 +3064,8 @@ class AnalyticsWidget(Widget):
         self._maxlevel = max(1, level - 1)
         if self._maxlevel == 1 and len(self._level_counts) <= 1:
             self._maxlevel = 0
+        if self._maxlevel > 1:
+            avail_height -= 20  # Need extra space for target info
 
         # Determine targets
         item = window.store.settings.get_by_key("tag_targets")
@@ -2956,6 +3084,7 @@ class AnalyticsWidget(Widget):
         self._npixels_each = self._slowly_update_value(self._npixels_each, npixels_each)
 
         # Three resolve passes: target inset and height, real inset and height, positioning
+        root_target_inset = 10  # stub value, but need > 0 for things to function
         self._max_cum_offset = 0
         self._resolve_target_inset_and_height(root, root_target_inset, root.cum_t)
         self._resolve_real_inset_and_height(root, None)
@@ -3101,10 +3230,10 @@ class AnalyticsWidget(Widget):
         """Calculate the real height, inset and cum_offset, limiting as needed."""
         PSCRIPT_OVERLOAD = False  # noqa
 
-        # Set actual height, inset, xoffset
+        # Set actual height, xoffset, inset is a historic thing that's disabled now
         d.height = self._slowly_update_value(d.height, d.target_height)
-        d.inset = self._slowly_update_value(d.inset, d.target_inset)
         d.xoffset = self._slowly_update_value(d.xoffset, d.target_xoffset)
+        d.inset = 0  # self._slowly_update_value(d.inset, d.target_inset)
 
         # Set cum_offset for base
         if d.level == 0:

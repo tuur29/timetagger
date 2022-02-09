@@ -10,7 +10,6 @@ from pscript.stubs import (
     Math,
     isFinite,
     Date,
-    isNaN,
     Audio,
     Notification,
 )
@@ -20,6 +19,7 @@ if this_is_js():
     tools = window.tools
     dt = window.dt
     utils = window.utils
+    stores = window.stores
 
 # A stack of dialogs
 stack = []
@@ -490,12 +490,7 @@ class TimeSelectionDialog(BaseDialog):
 
         # Generate preamble
         html = f"""
-            <div class='grid2c'>
-                <div></div>
-                <a><i class='fas'>\uf010</i> Zoom out <span class='keyhint'>←</span></a>
-                <a><i class='fas'>\uf00e</i> Zoom in <span class='keyhint'>→</span></a>
-                <div></div>
-            </div>
+            <div></div>
             <div style='min-height: 6px;'></div>
             <div class='grid5'>
                 <a>today <span class='keyhint'>d</span></a>
@@ -503,7 +498,7 @@ class TimeSelectionDialog(BaseDialog):
                 <a>this month <span class='keyhint'>m</span></a>
                 <a>this quarter</a>
                 <a>this year</a>
-                <a>yesterday</a>
+                <a>yester<wbr>day</a>
                 <a>last week</a>
                 <a>last month</a>
                 <a>last quarter</a>
@@ -521,15 +516,15 @@ class TimeSelectionDialog(BaseDialog):
         """
 
         self.maindiv.innerHTML = html
-        quicknav = self.maindiv.children[0]
         presets = self.maindiv.children[2]
         form = self.maindiv.children[4]
 
         self._t1_input = form.children[1]
         self._t2_input = form.children[3]
 
-        quicknav.children[1].onclick = lambda e: self._apply_quicknav("out")
-        quicknav.children[2].onclick = lambda e: self._apply_quicknav("in")
+        # quicknav = self.maindiv.children[0]
+        # quicknav.children[1].onclick = lambda e: self._apply_quicknav("out")
+        # quicknav.children[2].onclick = lambda e: self._apply_quicknav("in")
 
         for i in range(presets.children.length):
             but = presets.children[i]
@@ -711,9 +706,11 @@ class StartStopEdit:
         self.time1less.onclick = lambda: self.onchanged("time1less")
         self.time2more.onclick = lambda: self.onchanged("time2more")
         self.time2less.onclick = lambda: self.onchanged("time2less")
+        self.time1input.oninput = lambda: self.onchanged("time1fast")
+        self.time2input.oninput = lambda: self.onchanged("time2fast")
 
         self.reset(t1, t2, True)
-        self._timer_handle = window.setInterval(self._update_duration, 200)
+        self._timer_handle = window.setInterval(lambda: self._update_duration(), 200)
 
     def close(self):
         window.clearInterval(self._timer_handle)
@@ -722,10 +719,13 @@ class StartStopEdit:
         if self.initialmode in ("start", "new"):
             # Get sensible earlier time
             t2 = dt.now()
-            t1 = t2 - 5 * 3600
-            records = window.store.records.get_records(t1, t2).values()
-            records.sort(key=lambda r: r.t2)
-            if len(records) > 0:
+            secs_earlier = 8 * 3600  # 8 hours
+            running = records = window.store.records.get_running_records()
+            records = window.store.records.get_records(t2 - secs_earlier, t2).values()
+            if running:
+                t1 = t2 - 300  # 5 min earlier
+            elif len(records) > 0:
+                records.sort(key=lambda r: r.t2)
                 t1 = records[-1].t2  # start time == last records stop time
                 t1 = min(t1, t2 - 1)
             else:
@@ -786,12 +786,16 @@ class StartStopEdit:
         for i in range(8, 12):
             show_subnode(i, not self.radio_startnow.checked)
 
-    def _update_duration(self):
-        if self.t1 == self.t2:
+    def _update_duration(self, force=False):
+        is_running = self.ori_t1 == self.ori_t2
+        if not (force or is_running):
+            return
+
+        if is_running:
             t = dt.now() - self.t1
-            self.durationinput.value = (
-                f"{t//3600:.0f}h {(t//60)%60:02.0f}m {t%60:02.0f}s"
-            )
+        else:
+            t = self.t2 - self.t1
+        self.durationinput.value = f"{t//3600:.0f}h {(t//60)%60:02.0f}m {t%60:02.0f}s"
 
     def _days_between_dates(self, d1, d2):
         year1, month1, day1 = d1.split("-")
@@ -804,38 +808,15 @@ class StartStopEdit:
         else:
             return 0  # more than 100 days ... fall back to zero?
 
-    def _timestr2tuple(self, s):
-        s = RawJS('s.split(" ").join("") + ":"')  # remove whitespace
-        s = RawJS('s.replace(":", "h").replace(":", "m").replace(":", "s")')
-        s = RawJS(
-            's.replace("h", "h ").replace("m", "m ").replace("s", "s ").replace(":", ": ")'
-        )
-        hh = mm = ss = 0
-        for part in s.split(" "):
-            if len(part) > 1:
-                if part.endsWith("h"):
-                    hh = int(part[:-1])
-                elif part.endsWith("m"):
-                    mm = int(part[:-1])
-                    if isNaN(mm):
-                        mm = 0
-                elif part.endsWith("s"):
-                    ss = int(part[:-1])
-                    if isNaN(ss):
-                        ss = 0
-        if isNaN(hh) or isNaN(mm) or isNaN(ss):
-            return None, None, None
-        return hh, mm, ss
-
-    def _get_time(self, what):
+    def _get_time(self, what, fallback=True):
         node = self[what + "input"]
         hh = mm = ss = None
         if node.value:
-            hh, mm, ss = self._timestr2tuple(node.value)
-        if hh is None:
+            hh, mm, ss = utils.timestr2tuple(node.value)
+        if hh is None and fallback:
             if what == "time2":
                 self.days2 = self.ori_days2  # rest along with time2
-            hh, mm, ss = self._timestr2tuple(self["ori_" + what])
+            hh, mm, ss = utils.timestr2tuple(self["ori_" + what])
         return hh, mm, ss
 
     def render(self):
@@ -887,10 +868,16 @@ class StartStopEdit:
         now = dt.now()
 
         # Get node
-        if action.endsWith("more") or action.endsWith("less"):
+        if (
+            action.endsWith("more")
+            or action.endsWith("less")
+            or action.endswith("fast")
+        ):
             what = action[:-4]
+            option = action[-4:]
         else:
             what = action
+            option = ""
         node = self[what + "input"]
         if not node:
             return
@@ -933,32 +920,44 @@ class StartStopEdit:
 
         elif what == "time1":
             # Changing time1 -> update t1, keep t2 in check
-            hh, mm, ss = self._get_time("time1")
-            if action.endsWith("more"):
-                mm, ss = mm + 5, 0
-            elif action.endsWith("less"):
-                mm, ss = mm - 5, 0
-            d1 = window.Date(year1, month1 - 1, day1, hh, mm, ss)
-            self.t1 = dt.to_time_int(d1)
-            if self.ori_t1 == self.ori_t2:
-                self.t2 = self.t1 = min(self.t1, now)
-            elif self.t1 >= self.t2:
-                self.t2 = self.t1 + 1
+            if option == "fast":
+                hh, mm, ss = self._get_time("time1", False)
+                if hh is not None:
+                    d1 = window.Date(year1, month1 - 1, day1, hh, mm, ss)
+                    self.t1 = dt.to_time_int(d1)
+            else:
+                hh, mm, ss = self._get_time("time1")
+                if option == "more":
+                    mm, ss = mm + 5, 0
+                elif option == "less":
+                    mm, ss = mm - 5, 0
+                d1 = window.Date(year1, month1 - 1, day1, hh, mm, ss)
+                self.t1 = dt.to_time_int(d1)
+                if self.ori_t1 == self.ori_t2:
+                    self.t2 = self.t1 = min(self.t1, now)
+                elif self.t1 >= self.t2:
+                    self.t2 = self.t1 + 1
 
         elif what == "time2":
             # Changing time2 -> update t2, keep t1 and t2 in check
-            hh, mm, ss = self._get_time("time2")
-            if action.endsWith("more"):
-                mm, ss = mm + 5, 0
-            elif action.endsWith("less"):
-                mm, ss = mm - 5, 0
-            d2 = window.Date(year2, month2 - 1, day2, hh, mm, ss)
-            self.t2 = dt.to_time_int(d2)
-            if self.ori_t1 == self.ori_t2:
-                self.t2 = self.t1
-            elif self.t2 <= self.t1:
-                self.t1 = self.t2
-                self.t2 = self.t1 + 1
+            if option == "fast":
+                hh, mm, ss = self._get_time("time2", False)
+                if hh is not None:
+                    d2 = window.Date(year2, month2 - 1, day2, hh, mm, ss)
+                    self.t2 = dt.to_time_int(d2)
+            else:
+                hh, mm, ss = self._get_time("time2")
+                if option == "more":
+                    mm, ss = mm + 5, 0
+                elif option == "less":
+                    mm, ss = mm - 5, 0
+                d2 = window.Date(year2, month2 - 1, day2, hh, mm, ss)
+                self.t2 = dt.to_time_int(d2)
+                if self.ori_t1 == self.ori_t2:
+                    self.t2 = self.t1
+                elif self.t2 <= self.t1:
+                    self.t1 = self.t2
+                    self.t2 = self.t1 + 1
 
         elif what == "duration":
             # Changing duration -> update t2, but keep it in check
@@ -976,9 +975,12 @@ class StartStopEdit:
             else:
                 self.t2 = self.t1 + duration
 
-        # Invoke callback and rerender
-        window.setTimeout(self.callback, 1)
-        return self.render()
+        if action.endswith("fast"):
+            self._update_duration(True)
+        else:
+            # Invoke callback and rerender
+            window.setTimeout(self.callback, 1)
+            return self.render()
 
 
 class RecordDialog(BaseDialog):
@@ -1014,9 +1016,7 @@ class RecordDialog(BaseDialog):
             </div>
             <div class='container' style='min-height:5px;'>
                 <button type='button' style='float:right; font-size:85%; margin-top:-4px;'>
-                    <i class='fas'>\uf044</i></button>
-                <button type='button' style='float:right; font-size:85%; margin-top:-4px;'>
-                    <b>˅</b> Presets</button>
+                    Presets <i class='fas'>\uf044</i></button>
             </div>
             <div></div>
             <div style='color:#777;'></div>
@@ -1036,7 +1036,7 @@ class RecordDialog(BaseDialog):
         # Unpack so we have all the components
         (
             h1,  # Dialog title
-            _,  # Description header
+            self._ds_header,
             self._ds_container,
             self._preset_container,
             self._tags_div,
@@ -1050,7 +1050,6 @@ class RecordDialog(BaseDialog):
         #
         self._ds_input = self._ds_container.children[0]
         self._autocomp_div = self._ds_container.children[1]
-        self._preset_button = self._preset_container.children[1]
         self._preset_edit = self._preset_container.children[0]
         self._title_div = h1.children[1]
         self._cancel_but1 = self.maindiv.children[0].children[-1]
@@ -1099,7 +1098,6 @@ class RecordDialog(BaseDialog):
         self._resume_but.onclick = self.resume_record
         self._ds_input.oninput = self._on_user_edit
         self._ds_input.onchange = self._on_user_edit_done
-        self._preset_button.onclick = self.show_preset_tags
         self._preset_edit.onclick = lambda: self._canvas.tag_preset_dialog.open()
         self._delete_but1.onclick = self._delete1
         self._delete_but2.onclick = self._delete2
@@ -1180,34 +1178,27 @@ class RecordDialog(BaseDialog):
         self._mark_as_edited()
         self._autocomp_init()
         self._show_tags_from_ds()
+        # If the str is too long, limit it
+        if len(self._ds_input.value) >= stores.STR_MAX:
+            self._ds_input.value = self._ds_input.value.slice(0, stores.STR_MAX)
+            if "max" not in self._ds_header.innerHTML:
+                self._ds_header.innerHTML += (
+                    f" <small>(max {stores.STR_MAX-1} chars)</small>"
+                )
+            self._ds_input.style.setProperty("outline", "dashed 2px red")
+            reset = lambda: self._ds_input.style.setProperty("outline", "")
+            window.setTimeout(reset, 2000)
 
-    def show_preset_tags(self, e):
+    def show_preset_and_recent_tags(self, e):
         # Prevent that the click will hide the autocomp
         if e and e.stopPropagation:
             e.stopPropagation()
-        # Get list of preset strings
-        presets = self._get_suggested_tags_presets()
-        # Produce suggestions
         suggestions = []
-        for preset in presets:
+        # Collect presets
+        for preset in self._get_suggested_tags_presets():
             html = preset + "<span class='meta'>preset<span>"
             suggestions.push((preset, html))
-        # Show
-        val = self._ds_input.value.rstrip()
-        if val:
-            val += " "
-        if suggestions:
-            self._autocomp_state = self._get_autocomp_state()
-            self._autocomp_show("Tag presets:", suggestions)
-        else:
-            self._autocomp_show("No presets defined ...", [])
-
-    def show_recent_tags(self, e):
-        # Prevent that the click will hide the autocomp
-        if e and e.stopPropagation:
-            e.stopPropagation()
-        # Collect suggestions
-        suggestions = []
+        # Collect recents
         now = dt.now()
         for tag, tag_t2 in self._suggested_tags_recent:
             date = max(0, int((now - tag_t2) / 86400))
@@ -1217,9 +1208,9 @@ class RecordDialog(BaseDialog):
         # Show
         if suggestions:
             self._autocomp_state = self._get_autocomp_state()
-            self._autocomp_show("Recent tags:", suggestions)
+            self._autocomp_show("Presets & recent tags:", suggestions)
         else:
-            self._autocomp_show("No recent tags ...", suggestions)
+            self._autocomp_show("No presets or recent tags ...", [])
 
     def _autocomp_init(self):
         """Show tag suggestions in the autocompletion dialog."""
@@ -1231,13 +1222,41 @@ class RecordDialog(BaseDialog):
             self._autocomp_clear()
             return
         elif tag_to_be == "#":
-            return self.show_recent_tags()  # Delegate
+            return self.show_preset_and_recent_tags()  # Delegate
 
         # Obtain suggestions
         now = dt.now()
         needle = tag_to_be[1:]  # the tag without the '#'
         matches1 = []
         matches2 = []
+        # Suggestions from presets
+        for preset in self._get_suggested_tags_presets():
+            html = preset + "<span class='meta'>preset<span>"
+            i = preset.indexOf(needle)
+            if i > 0:
+                if preset[i - 1] == "#":
+                    # A tag in the preset startswith the needle
+                    html = (
+                        preset[: i - 1]
+                        + "<b>"
+                        + tag_to_be
+                        + "</b>"
+                        + preset[i + needle.length :]
+                    )
+                    html += "<span class='meta'>preset<span>"
+                    matches1.push((preset, html))
+                elif needle.length >= 2:
+                    # The preset contains the needle, and the needle is more than 1 char
+                    html = (
+                        preset[:i]
+                        + "<b>"
+                        + needle
+                        + "</b>"
+                        + preset[i + needle.length :]
+                    )
+                    html += "<span class='meta'>preset<span>"
+                    matches2.push((preset, html))
+        # Suggestions from recent tags
         for tag, tag_t2 in self._suggested_tags_all:
             i = tag.indexOf(needle)
             if i > 0:
@@ -1260,7 +1279,7 @@ class RecordDialog(BaseDialog):
         # Show
         if suggestions:
             self._autocomp_state = val, i1, i2
-            self._autocomp_show("Matching tags:", suggestions)
+            self._autocomp_show("Matching presets / tags:", suggestions)
         else:
             self._autocomp_clear()
 
@@ -1273,12 +1292,12 @@ class RecordDialog(BaseDialog):
         self._autocomp_div.appendChild(item)
         # Add suggestions
         self._suggested_tags_in_autocomp = []
-        for tag, html in suggestions:
-            self._suggested_tags_in_autocomp.push(tag)
+        for text, html in suggestions:  # text is a tag or a preset
+            self._suggested_tags_in_autocomp.push(text)
             item = document.createElement("div")
             item.classList.add("tag-suggestion")
             item.innerHTML = html
-            onclick = f'window._record_dialog_autocomp_finish("{tag}");'
+            onclick = f'window._record_dialog_autocomp_finish("{text}");'
             item.setAttribute("onclick", onclick)
             self._autocomp_div.appendChild(item)
         # Show
@@ -1312,14 +1331,14 @@ class RecordDialog(BaseDialog):
         self._autocomp_div.hidden = True
         self._autocomp_div.innerHTML = ""
 
-    def _autocomp_finish(self, tag):
+    def _autocomp_finish(self, text):
         self._autocomp_clear()
-        if tag:
+        if text:
             # Compose new description and cursor pos
             val, i1, i2 = self._autocomp_state
-            new_val = val[:i1] + tag + val[i2:]
-            i3 = max(0, i1) + len(tag)
-            # Add a space if the tag is added to the end
+            new_val = val[:i1] + text + val[i2:]
+            i3 = max(0, i1) + len(text)
+            # Add a space if the text is added to the end
             if len(val[i2:].strip()) == 0:
                 new_val = new_val.rstrip() + " "
                 i3 = new_val.length
@@ -1467,7 +1486,8 @@ class RecordDialog(BaseDialog):
     def _get_suggested_tags_presets(self):
         """Get suggested tags based on the presets."""
         item = window.store.settings.get_by_key("tag_presets")
-        return (None if item is None else item.value) or []
+        presets = (None if item is None else item.value) or []
+        return [preset for preset in presets if preset]
 
     def _delete1(self):
         self._delete_but2.style.display = "block"
@@ -1479,11 +1499,12 @@ class RecordDialog(BaseDialog):
         window.store.records.put(record)
         self.close(record)
 
-    def _stop_all_running_records(self):
+    def _stop_all_running_records(self, t2=None):
         records = window.store.records.get_running_records()
-        now = dt.now()
+        if t2 is None:
+            t2 = dt.now()
         for record in records:
-            record.t2 = max(record.t1 + 10, now)
+            record.t2 = max(record.t1 + 10, t2)
             window.store.records.put(record)
 
     def submit(self):
@@ -1498,7 +1519,7 @@ class RecordDialog(BaseDialog):
             self._record.pop("ds", None)
         # Prevent multiple timers at once
         if self._record.t1 == self._record.t2:
-            self._stop_all_running_records()
+            self._stop_all_running_records(self._record.t1)
         # Apply
         window.store.records.put(self._record)
         super().submit(self._record)
@@ -1699,6 +1720,8 @@ class TagPresetsDialog(BaseDialog):
         self._input_element.ondragexit = self._on_drop_stop
         self._input_element.ondragover = self._on_drop_over
         self._input_element.ondrop = self._on_drop
+        self._input_element.oninput = self._on_edit
+        self._input_element.onchange = self._on_edit
 
         self._analysis_out = self.maindiv.children[-2]
 
@@ -1741,6 +1764,20 @@ class TagPresetsDialog(BaseDialog):
                     self._analysis_out.innerHTML = f"Read from <u>{file.name}</u>"
                     break  # only process first one
 
+    def _on_edit(self):
+        # This length estimate is only correct if the tags are formatted
+        # correctly, i.e. no whitespace or non-tag words. The actual
+        # length can only really be obtained by collecting all tags
+        # from the text and stringifying it with json, but that would
+        # be too slow to do on each key press (there can be MANY lines).
+        # We take the normal length, plus 2 per line for quotes, and 4 for braces.
+        length_est = self._input_element.value.length
+        length_est += self._input_element.value.count("\n") * 2 + 4
+        if length_est >= stores.JSON_MAX:
+            self._input_element.style.setProperty("outline", "dashed 2px red")
+        else:
+            self._input_element.style.setProperty("outline", "")
+
     def _load_current(self):
         item = window.store.settings.get_by_key("tag_presets")
         lines = (None if item is None else item.value) or []
@@ -1759,12 +1796,20 @@ class TagPresetsDialog(BaseDialog):
         for line in lines1:
             line = line.strip()
             if line:
-                tags, _ = utils.get_tags_and_parts_from_string(to_str(line))
+                tags, _ = utils.get_tags_and_parts_from_string(to_str(line), False)
                 for tag in tags:
                     found_tags[tag] = tag
                 line = tags.join(" ")
-                if line:
-                    lines2.append(line)
+            lines2.append(line)
+
+        # Check size
+        length = JSON.stringify(lines2).length
+        if length >= stores.JSON_MAX:
+            self._input_element.style.setProperty("outline", "dashed 2px red")
+            self._analysis_out.innerHTML = (
+                f"Sorry, used {length} of max {stores.JSON_MAX-1} chars."
+            )
+            return
 
         # Save
         item = window.store.settings.create("tag_presets", lines2)
@@ -1796,10 +1841,15 @@ class TagManageDialog(BaseDialog):
             <a href="https://timetagger.app/articles/tags/#manage" target='new'>this article</a> for details.<br><br>
             </p>
             <div class='formlayout'>
+                <div>Search mode:</div>
+                <div>
+                    <label style='user-select:none;'><input type='radio' name='searchmode' /> tags</label>
+                    <label style='user-select:none;'><input type='radio' name='searchmode' /> plain text</label>
+                </div>
                 <div>Tags:</div>
-                <input type='text' placeholder='Tags to search for' spellcheck='false' />
+                <input type='text' spellcheck='false' />
                 <div>Replacement:</div>
-                <input type='text' placeholder='Replacement tags' spellcheck='false' />
+                <input type='text' spellcheck='false' />
                 <div></div>
                 <button type='button'>Find records</button>
                 <div></div>
@@ -1819,13 +1869,20 @@ class TagManageDialog(BaseDialog):
         self._records_node = self.maindiv.children[-1]
 
         formdiv = self.maindiv.children[2]
-        self._tagname1 = formdiv.children[1]
-        self._tagname2 = formdiv.children[3]
-        self._button_find = formdiv.children[5]
-        self._button_replace = formdiv.children[7]
-        self._button_replace_comfirm = formdiv.children[9]
-        self._taghelp = formdiv.children[11]
+        self._radionode = formdiv.children[1]
+        self._search_header = formdiv.children[2]
+        self._radio_mode_tags = self._radionode.children[0].children[0]
+        self._radio_mode_text = self._radionode.children[1].children[0]
+        self._tagname1 = formdiv.children[3]
+        self._tagname2 = formdiv.children[5]
+        self._button_find = formdiv.children[7]
+        self._button_replace = formdiv.children[9]
+        self._button_replace_comfirm = formdiv.children[11]
+        self._taghelp = formdiv.children[13]
 
+        self._radio_mode_tags.setAttribute("checked", True)
+        self._radio_mode_tags.onclick = self._on_mode_change
+        self._radio_mode_text.onclick = self._on_mode_change
         self._tagname1.oninput = self._check_name1
         self._tagname2.oninput = self._check_names
         self._tagname1.onchange = self._fix_name1
@@ -1847,6 +1904,7 @@ class TagManageDialog(BaseDialog):
         self._records = []
 
         super().open(None)
+        self._on_mode_change()
         if utils.looks_like_desktop():
             self._tagname1.focus()
 
@@ -1855,32 +1913,50 @@ class TagManageDialog(BaseDialog):
         self._records_uptodate = False
         super().close()
 
+    def _on_mode_change(self):
+        self._tagname2.value = ""
+        if self._radio_mode_tags.checked:
+            self._search_header.innerText = "Tags:"
+            self._tagname1.placeholder = "One or more tags to search for"
+            self._tagname2.placeholder = "Replacement tag(s)"
+        else:
+            self._search_header.innerText = "Search:"
+            self._tagname1.placeholder = "Text to search for"
+            self._tagname2.placeholder = "Replacement text"
+        self._check_name1()
+
     def _check_name1(self):
         self._records_uptodate = False
         self._check_names()
 
     def _check_names(self):
 
-        name1 = self._tagname1.value
-        name2 = self._tagname2.value
-        tags1, _ = utils.get_tags_and_parts_from_string(name1)
-        tags2, _ = utils.get_tags_and_parts_from_string(name2)
+        text1 = self._tagname1.value
+        text2 = self._tagname2.value
 
         err = ""
         ok1 = ok2 = False
 
-        if not name1:
-            pass
-        elif not tags1:
-            err += "Tags needs to start with '#'. "
-        else:
-            ok1 = True
+        if self._radio_mode_tags.checked:
+            tags1, _ = utils.get_tags_and_parts_from_string(text1)
+            tags2, _ = utils.get_tags_and_parts_from_string(text2)
 
-        if not name2:
-            ok2 = True  # remove is ok
-        elif not tags2:
-            err += "Tags needs to start with '#'. "
+            if not text1 or text1 == "#":
+                pass
+            elif not tags1:
+                err += "Tags need to start with '#'. "
+            else:
+                ok1 = True
+
+            if not text2:
+                ok2 = True  # remove is ok
+            elif not tags2:
+                err += "Tags needs to start with '#'. "
+            else:
+                ok2 = True
         else:
+            if text1:
+                ok1 = True
             ok2 = True
 
         self._button_find.disabled = not ok1
@@ -1890,12 +1966,18 @@ class TagManageDialog(BaseDialog):
         self._taghelp.innerHTML = "<i>" + err + "</i>"
 
     def _fix_name1(self):
-        tags1, _ = utils.get_tags_and_parts_from_string(self._tagname1.value)
-        self._tagname1.value = " ".join(tags1)
+        if self._radio_mode_tags.checked:
+            tags1, _ = utils.get_tags_and_parts_from_string(self._tagname1.value)
+            self._tagname1.value = " ".join(tags1)
+        else:
+            self._tagname1.value = self._tagname1.value.strip().lower()
 
     def _fix_name2(self):
-        tags2, _ = utils.get_tags_and_parts_from_string(self._tagname2.value)
-        self._tagname2.value = " ".join(tags2)
+        if self._radio_mode_tags.checked:
+            tags2, _ = utils.get_tags_and_parts_from_string(self._tagname2.value)
+            self._tagname2.value = " ".join(tags2)
+        else:
+            self._tagname2.value = self._tagname2.value.strip()  # not lower!
 
     def _on_key1(self, e):
         key = e.key.lower()
@@ -1908,23 +1990,35 @@ class TagManageDialog(BaseDialog):
             self._replace_all()
 
     def _find_records(self):
-        search_tags, _ = utils.get_tags_and_parts_from_string(self._tagname1.value)
-        # Early exit?
-        if not search_tags:
-            self._records_node.innerHTML = "Nothing found."
-            return
-        # Get list of records
         records = []
-        for record in window.store.records.get_dump():
-            tags = window.store.records.tags_from_record(record)  # include #untagged
-            all_ok = True
-            for tag in search_tags:
-                if tag not in tags:
-                    all_ok = False
-            if all_ok:
-                records.push([record.t1, record.key])
-        records.sort(key=lambda x: x[0])
 
+        if self._radio_mode_tags.checked:
+            search_tags, _ = utils.get_tags_and_parts_from_string(self._tagname1.value)
+            # Early exit?
+            if not search_tags:
+                self._records_node.innerHTML = "Nothing found."
+                return
+            # Get list of records
+            for record in window.store.records.get_dump():
+                tags = window.store.records.tags_from_record(record)  # also #untagged
+                all_ok = True
+                for tag in search_tags:
+                    if tag not in tags:
+                        all_ok = False
+                if all_ok:
+                    records.push([record.t1, record.key])
+        else:
+            search_text = self._tagname1.value
+            # Early exit?
+            if not search_text:
+                self._records_node.innerHTML = "Nothing found."
+                return
+            # Get list of records
+            for record in window.store.records.get_dump():
+                if search_text in record.ds.lower():
+                    records.push([record.t1, record.key])
+
+        records.sort(key=lambda x: x[0])
         self._records = [x[1] for x in records]
         self._records_uptodate = True
         self._show_records()
@@ -1951,38 +2045,79 @@ class TagManageDialog(BaseDialog):
         self._records_node.innerHTML = "<br />\n".join(lines)
 
     def _replace_all(self):
-        replacement_tags, _ = utils.get_tags_and_parts_from_string(self._tagname2.value)
-        n = len(self._records)
-        if replacement_tags:
-            text = f"Confirm replacing tags in {n} records"
+        if self._radio_mode_tags.checked:
+            replacement_tags, _ = utils.get_tags_and_parts_from_string(
+                self._tagname2.value
+            )
+            n = len(self._records)
+            if replacement_tags:
+                text = f"Confirm replacing tags in {n} records"
+            else:
+                text = f"Confirm removing tags in {n} records"
         else:
-            text = f"Confirm removing tags in {n} records"
+            n = len(self._records)
+            text = f"Confirm updating the description in {n} records"
+
         self._button_replace_comfirm.innerText = text
         self._button_replace_comfirm.disabled = False
         self._button_replace_comfirm.style.visibility = "visible"
 
     def _really_replace_all(self):
-        search_tags, _ = utils.get_tags_and_parts_from_string(self._tagname1.value)
-        replacement_tags, _ = utils.get_tags_and_parts_from_string(self._tagname2.value)
 
-        for key in self._records:
-            record = window.store.records.get_by_key(key)
-            _, parts = utils.get_tags_and_parts_from_string(record.ds)
-            # Get updated parts
-            new_parts = []
-            replacement_made = False
-            for part in parts:
-                if part.startswith("#") and (
-                    part in search_tags or part in replacement_tags
-                ):
-                    if not replacement_made:
-                        replacement_made = True
-                        new_parts.push(" ".join(replacement_tags))
-                else:
-                    new_parts.push(part)
-            # Submit
-            record.ds = "".join(new_parts)
-            window.store.records.put(record)
+        if self._radio_mode_tags.checked:
+
+            search_tags, _ = utils.get_tags_and_parts_from_string(self._tagname1.value)
+            replacement_tags, _ = utils.get_tags_and_parts_from_string(
+                self._tagname2.value
+            )
+
+            for key in self._records:
+                record = window.store.records.get_by_key(key)
+                _, parts = utils.get_tags_and_parts_from_string(record.ds)
+                # Get updated parts
+                new_parts = []
+                replacement_made = False
+                for part in parts:
+                    if part.startswith("#") and (
+                        part in search_tags or part in replacement_tags
+                    ):
+                        if not replacement_made:
+                            replacement_made = True
+                            new_parts.push(" ".join(replacement_tags))
+                    else:
+                        new_parts.push(part)
+                # Submit
+                record.ds = "".join(new_parts)
+                window.store.records.put(record)
+
+            # Also update colors
+            if len(search_tags) == 1 and len(replacement_tags) == 1:
+                tag1, tag2 = search_tags[0], replacement_tags[0]
+                cur_color = window.store.settings.get_color_for_tag(tag1)
+                default_color = window.store.settings.get_color_for_tag(
+                    "#notanactualtag"
+                )
+                window.store.settings.set_color_for_tag(tag1, "")
+                if cur_color != default_color:
+                    window.store.settings.set_color_for_tag(tag2, cur_color)
+
+        else:
+            search_text = self._tagname1.value.strip().toLowerCase()
+            replacement_text = self._tagname2.value.strip()
+
+            for key in self._records:
+                record = window.store.records.get_by_key(key)
+                ds_lower = record.ds.toLowerCase()
+                pos = len(ds_lower)
+                while pos >= 0:
+                    pos = ds_lower.lastIndexOf(search_text, pos)
+                    if pos < 0:
+                        break
+                    pre = record.ds[:pos]
+                    post = record.ds[pos + len(search_text) :]
+                    record.ds = pre + replacement_text + post
+                    pos -= 1
+                window.store.records.put(record)
 
         self._records_node.innerHTML = ""
         self._show_records()
@@ -2099,7 +2234,9 @@ class ReportDialog(BaseDialog):
         if self._tags:
             filtertext = self._tags.join(" ")
         else:
-            filtertext = "all (no tags selected)"
+            filtertext = (
+                "<small>(select tags in the overview panel to filter by them)</small>"
+            )
         self._copybuttext = "Copy table"
         html = f"""
             <h1><i class='fas'>\uf15c</i>&nbsp;&nbsp;Report
@@ -2108,6 +2245,13 @@ class ReportDialog(BaseDialog):
             <div class='formlayout'>
                 <div>Tags:</div> <div>{filtertext}</div>
                 <div>Date range:</div> <div></div>
+                <div>Grouping:</div> <select>
+                                        <option value='none'>none</option>
+                                        <option value='tagz'>tags</option>
+                                        <option value='date'>date</option>
+                                        <option value='tagz/date'>tags / date</option>
+                                        <option value='date/tagz'>date / tags</option>
+                                     </select>
                 <div>Format:</div> <label><input type='checkbox' /> Hours in decimals</label>
                 <div>Details:</div> <label><input type='checkbox' checked /> Show records</label>
                 <button type='button'><i class='fas'>\uf328</i>&nbsp;&nbsp;{self._copybuttext}</button>
@@ -2127,17 +2271,21 @@ class ReportDialog(BaseDialog):
 
         # filter text = form.children[1]
         self._date_range = form.children[3]
-        self._hourdecimals_but = form.children[5].children[0]  # inside label
-        self._showrecords_but = form.children[7].children[0]  # inside label
-        self._copy_but = form.children[8]
-        self._savecsv_but = form.children[10]
-        self._savepdf_but = form.children[12]
+        self._grouping_select = form.children[5]
+        self._hourdecimals_but = form.children[7].children[0]  # inside label
+        self._showrecords_but = form.children[9].children[0]  # inside label
+        self._copy_but = form.children[10]
+        self._savecsv_but = form.children[12]
+        self._savepdf_but = form.children[14]
 
         # Connect input elements
         close_but = self.maindiv.children[0].children[-1]
         close_but.onclick = self.close
         self._date_range.innerText = t1_date + "  -  " + t2_date
         #
+        grouping = window.localsettings.get("report_grouping", "date")
+        self._grouping_select.value = grouping
+        self._grouping_select.onchange = self._on_grouping_changed
         self._hourdecimals_but.oninput = self._update_table
         self._showrecords_but.oninput = self._update_table
         #
@@ -2147,6 +2295,10 @@ class ReportDialog(BaseDialog):
 
         window.setTimeout(self._update_table)
         super().open(None)
+
+    def _on_grouping_changed(self):
+        window.localsettings.set("report_grouping", self._grouping_select.value)
+        self._update_table()
 
     def _update_table(self):
         t1_date = self._t1_date
@@ -2192,23 +2344,114 @@ class ReportDialog(BaseDialog):
         # Get better names
         name_map = utils.get_better_tag_order_from_stats(stats, self._tags, True)
 
-        # Create list of pairs of stat-name, stat-key, and sort
+        # Create list of pairs of stat-name, stat-key, and sort.
+        # Thid is the reference order for tagz.
         statobjects = []
         for tagz1, tagz2 in name_map.items():
             statobjects.append({"oritagz": tagz1, "tagz": tagz2, "t": stats[tagz1]})
         utils.order_stats_by_duration_and_name(statobjects)
 
-        # Collect per tag combi, filter if necessary
-        records_per_tagz = {}
-        for tagz in name_map.keys():
-            records_per_tagz[tagz] = []
-        for i in range(len(records)):
-            record = records[i]
-            tags = window.store.records.tags_from_record(record)
-            tagz = tags.join(" ")
-            # if all([tag in tags for tag in self._tags]):
-            if tagz in records_per_tagz:
-                records_per_tagz[tagz].append(record)
+        # Get how to group the records
+        group_method = self._grouping_select.value
+
+        # Perform grouping ...
+        if group_method == "tagz":
+            groups = {}
+            for obj in statobjects:
+                groups[obj.tagz] = {"title": obj.tagz, "t": 0, "records": []}
+            for i in range(len(records)):
+                record = records[i]
+                tagz1 = window.store.records.tags_from_record(record).join(" ")
+                if tagz1 not in name_map:
+                    continue
+                tagz2 = name_map[tagz1]
+                group = groups[tagz2]
+                group.records.push(record)
+                group.t += record.t2 - record.t1
+            group_list = groups.values()
+
+        elif group_method == "date":
+            groups = {}
+            for i in range(len(records)):
+                record = records[i]
+                tagz1 = window.store.records.tags_from_record(record).join(" ")
+                if tagz1 not in name_map:
+                    continue
+                date = dt.time2localstr(record.t1).split(" ")[0]
+                if date not in groups:
+                    tdate = "-".join(reversed(date.split("-")))
+                    groups[date] = {"title": tdate, "t": 0, "records": []}
+                group = groups[date]
+                group.records.push(record)
+                group.t += record.t2 - record.t1
+            group_list = groups.values()
+
+        elif group_method == "tagz/date":
+            groups = {}
+            for obj in statobjects:
+                groups[obj.tagz] = {}
+            for i in range(len(records)):
+                record = records[i]
+                tagz1 = window.store.records.tags_from_record(record).join(" ")
+                if tagz1 not in name_map:
+                    continue
+                tagz2 = name_map[tagz1]
+                date = dt.time2localstr(record.t1).split(" ")[0]
+                subgroups = groups[tagz2]
+                if date not in subgroups:
+                    tdate = "-".join(reversed(date.split("-")))
+                    subgroups[date] = {
+                        "title": tagz2 + " / " + tdate,
+                        "t": 0,
+                        "records": [],
+                    }
+                group = subgroups[date]
+                group.records.push(record)
+                group.t += record.t2 - record.t1
+            group_list = []
+            for subgroups in groups.values():
+                for group in subgroups.values():
+                    if group.t:
+                        group_list.push(group)
+
+        elif group_method == "date/tagz":
+            groups = {}
+            for i in range(len(records)):
+                record = records[i]
+                tagz1 = window.store.records.tags_from_record(record).join(" ")
+                if tagz1 not in name_map:
+                    continue
+                tagz2 = name_map[tagz1]
+                date = dt.time2localstr(record.t1).split(" ")[0]
+                if date not in groups:
+                    subgroups = {}
+                    for obj in statobjects:
+                        tdate = "-".join(reversed(date.split("-")))
+                        subgroups[obj.tagz] = {
+                            "title": tdate + " / " + obj.tagz,
+                            "t": 0,
+                            "records": [],
+                        }
+                    groups[date] = subgroups
+                subgroups = groups[date]
+                group = subgroups[tagz2]
+                group.records.push(record)
+                group.t += record.t2 - record.t1
+            group_list = []
+            for subgroups in groups.values():
+                for group in subgroups.values():
+                    if group.t:
+                        group_list.push(group)
+
+        else:
+            group = {"title": "hidden", "t": 0, "records": []}
+            group_list = [group]
+            for i in range(len(records)):
+                record = records[i]
+                tagz1 = window.store.records.tags_from_record(record).join(" ")
+                if tagz1 not in name_map:
+                    continue
+                group.records.push(record)
 
         # Generate rows
         rows = []
@@ -2219,17 +2462,18 @@ class ReportDialog(BaseDialog):
             total += stats[tagz]
         rows.append(["head", duration2str(total), "Total", 0])
 
-        for statobject in statobjects:
+        for group in group_list:
             # Add row for total of this tag combi
-            duration = duration2str(statobject.t)
+            duration = duration2str(group.t)
             pad = 1
             if showrecords:
                 rows.append(["blank"])
-            rows.append(["head", duration, statobject.tagz, pad])
+            if group.title != "hidden":
+                rows.append(["head", duration, group.title, pad])
 
             # Add row for each record
             if showrecords:
-                records = records_per_tagz[statobject.oritagz]
+                records = group.records
                 for i in range(len(records)):
                     record = records[i]
                     sd1, st1 = dt.time2localstr(record.t1).split(" ")
@@ -2921,19 +3165,20 @@ class SettingsDialog(BaseDialog):
             "Enter": "Submit dialog",
             "Escape": "Close dialog",
             "_nav": "<b>Navigation</b>",
-            "Home/End": "Snap to now (on current time-scale)",
-            "d": "Select today",
-            "w": "Select this week",
-            "m": "Select this month",
+            "N/Home/End": "Snap to now",
+            "D": "Select today",
+            "W": "Select this week",
+            "M": "Select this month",
             "↑/PageUp": "Step back in time",
             "↓/PageDown": "Step forward in time",
             "→": "Zoom in",
             "←": "Zoom out",
             "_other": "<b>Other</b>",
-            "s": "Start the timer or add an earlier record",
-            "x": "Stop the timer",
-            "t": "Select time range",
-            "r": "Open report dialog",
+            "S": "Start the timer or add an earlier record",
+            "Shift+S": "Resume the current/previous record",
+            "X": "Stop the timer",
+            "T": "Select time range",
+            "R": "Open report dialog",
         }
         shortcuts_html = ""
         for key, expl in shortcuts.items():

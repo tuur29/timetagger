@@ -66,7 +66,6 @@ if this_is_js():  # pragma: no cover
     def to_jsonable(x):
         return x
 
-
 else:
     from random import random
     from . import dt
@@ -116,7 +115,7 @@ else:
             return d
 
 
-_min_heap_bin_size = 2 ** 17  # about 1.5 day
+_min_heap_bin_size = 2**17  # about 1.5 day
 
 
 # At the client:
@@ -138,7 +137,7 @@ SETTING_SPEC = dict(key=to_str, mt=to_int, value=to_jsonable)
 SETTING_REQ = ["key", "mt", "value"]
 
 STR_MAX = 256
-
+JSON_MAX = 8192
 
 # ----- END COMMON PART (don't change this comment)
 
@@ -449,7 +448,7 @@ class RecordStore(BaseStore):
 
         # Init
         heaplayer = self._heap[level]
-        binsize = _min_heap_bin_size * 2 ** level
+        binsize = _min_heap_bin_size * 2**level
         empty_bins = []
 
         # Iterate over all bins to update
@@ -548,7 +547,7 @@ class RecordStore(BaseStore):
     def _get_records(self, t1, t2, level, nr, records):
         PSCRIPT_OVERLOAD = False  # noqa
 
-        binsize = _min_heap_bin_size * 2 ** level
+        binsize = _min_heap_bin_size * 2**level
         bin_t1 = binsize * (nr + 0.0)
         bin_t2 = binsize * (nr + 1.0)
 
@@ -616,7 +615,7 @@ class RecordStore(BaseStore):
     def _get_stats(self, t1, t2, level, nr, stats):
         PSCRIPT_OVERLOAD = False  # noqa
 
-        binsize = _min_heap_bin_size * 2 ** level
+        binsize = _min_heap_bin_size * 2**level
         bin_t1 = binsize * (nr + 0.0)
         bin_t2 = binsize * (nr + 1.0)
 

@@ -39,7 +39,7 @@ def to_str(s):
 
 def to_jsonable(x):
     s = json.dumps(x)
-    if len(s) >= STR_MAX:
+    if len(s) >= JSON_MAX:
         raise ValueError("Values must be less than 256 chars when jsonized.")
     return x
 
@@ -53,6 +53,7 @@ SETTING_SPEC = dict(key=to_str, mt=to_int, value=to_jsonable)
 SETTING_REQ = ["key", "mt", "value"]
 
 STR_MAX = 256
+JSON_MAX = 8192
 
 # ----- END COMMON PART (don't change this comment)
 
@@ -389,7 +390,7 @@ async def put_settings(request, auth_info, db):
 async def _push_items(request, auth_info, db, what):
 
     # Download items
-    items = await request.get_json(10 * 2 ** 20)  # 10 MiB limit
+    items = await request.get_json(10 * 2**20)  # 10 MiB limit
     if not isinstance(items, list):
         raise TypeError(f"List of {what} must be a list")
 
