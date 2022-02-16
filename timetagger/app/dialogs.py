@@ -714,7 +714,9 @@ class StartStopEdit:
 
         self.reset(t1, t2, True)
         self._timer_handle = window.setInterval(lambda: self._update_duration(), 200)
-        self._on_mode_change()
+
+        if self.initialmode == "new":
+            self._on_mode_change()
 
     def close(self):
         window.clearInterval(self._timer_handle)

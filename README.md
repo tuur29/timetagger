@@ -43,7 +43,7 @@ project and open source in general.
 
 ### Docker
 
-Run: `docker run -v data:/root/_timetagger:rw tuur29/timetagger`
+Run: `docker run -v data:/root/_timetagger:rw -p 8080:80 tuur29/timetagger`
 
 Build new version: `docker build -t tuur29/timetagger .`
 
